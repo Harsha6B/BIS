@@ -103,15 +103,4 @@ plt.show()
 
 
 
-OUTPUT:
-Generation 1, Best Fitness: 0.6450
-Generation 2, Best Fitness: 0.6725
-Generation 3, Best Fitness: 0.7175
-Generation 4, Best Fitness: 0.7500
-Generation 5, Best Fitness: 0.7575
-Generation 6, Best Fitness: 0.7650
-Generation 7, Best Fitness: 0.7575
-Generation 8, Best Fitness: 0.7575
-Generation 9, Best Fitness: 0.7700
-Generation 10, Best Fitness: 0.7750
-Final Accuracy on Validation Set: 0.7400
+
