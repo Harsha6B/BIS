@@ -1,74 +1,93 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from skimage import data, color, util
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier
 
-def get_neighbors_indices(row, col, max_row, max_col):
-    neighbors = []
-    for dr in [-1, 0, 1]:
-        for dc in [-1, 0, 1]:
-            if dr == 0 and dc == 0:
-                continue
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < max_row and 0 <= nc < max_col:
-                neighbors.append((nr, nc))
-    return neighbors
+# Load dataset
+data = load_breast_cancer()
+X = data.data
+y = data.target
+num_features = X.shape[1]
 
-def pca_noise_reduction(image, max_iterations=10, sigma=15):
-    rows, cols = image.shape
-    denoised_image = image.copy().astype(float)
-    
-    for iteration in range(max_iterations):
-        new_image = denoised_image.copy()
-        
-        for i in range(rows):
-            for j in range(cols):
-                neighbors = get_neighbors_indices(i, j, rows, cols)
-                
-                weights = []
-                intensities = []
-                
-                for nr, nc in neighbors:
-                    diff = abs(denoised_image[nr, nc] - denoised_image[i, j])
-                    weight = np.exp(-diff / sigma)
-                    weights.append(weight)
-                    intensities.append(denoised_image[nr, nc])
-                
-                weights = np.array(weights)
-                intensities = np.array(intensities)
-                
-                if weights.sum() > 0:
-                    new_value = np.sum(weights * intensities) / np.sum(weights)
-                    new_image[i, j] = new_value
-        
-        denoised_image = new_image
-    
-    return denoised_image.astype(np.uint8)
+# Gray Wolf Optimizer parameters
+num_wolves = 10  # Population size
+max_iter = 10    # Number of iterations
 
-# Load sample image and add noise
-image = color.rgb2gray(data.astronaut())
-image = (image * 255).astype(np.uint8)
+# Binary GWO helper functions
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
 
-noisy_image = util.random_noise(image, mode='s&p', amount=0.05)  # Fixed noise mode here
-noisy_image = (noisy_image * 255).astype(np.uint8)
+def binary_transform(x):
+    return np.where(sigmoid(x) > np.random.rand(len(x)), 1, 0)
 
-# Apply PCA-based noise reduction
-denoised = pca_noise_reduction(noisy_image, max_iterations=10, sigma=20)
+# Fitness function: classification accuracy
+def fitness(position):
+    selected_features = np.where(position == 1)[0]
+    if len(selected_features) == 0:
+        return 0
+    X_selected = X[:, selected_features]
+    clf = RandomForestClassifier(n_estimators=50)
+    score = cross_val_score(clf, X_selected, y, cv=5).mean()
+    return score
 
-# Visualize results
-plt.figure(figsize=(15,5))
-plt.subplot(1,3,1)
-plt.title('Original Image')
-plt.imshow(image, cmap='gray')
-plt.axis('off')
+# Initialize wolves
+wolves = np.random.uniform(-1, 1, (num_wolves, num_features))
+binary_wolves = np.array([binary_transform(w) for w in wolves])
+fitness_vals = np.array([fitness(w) for w in binary_wolves])
 
-plt.subplot(1,3,2)
-plt.title('Noisy Image')
-plt.imshow(noisy_image, cmap='gray')
-plt.axis('off')
+# Initialize alpha, beta, delta
+alpha_idx = np.argmax(fitness_vals)
+alpha = wolves[alpha_idx].copy()
+alpha_score = fitness_vals[alpha_idx]
 
-plt.subplot(1,3,3)
-plt.title('Denoised Image')
-plt.imshow(denoised, cmap='gray')
-plt.axis('off')
+beta_idx = np.argsort(fitness_vals)[-2]
+beta = wolves[beta_idx].copy()
+beta_score = fitness_vals[beta_idx]
 
-plt.show()
+delta_idx = np.argsort(fitness_vals)[-3]
+delta = wolves[delta_idx].copy()
+delta_score = fitness_vals[delta_idx]
+
+# Main loop
+for t in range(max_iter):
+    a = 2 - t * (2 / max_iter)  # Linearly decreasing a
+
+    for i in range(num_wolves):
+        for j in range(num_features):
+            r1, r2 = np.random.rand(), np.random.rand()
+            A1 = 2 * a * r1 - a
+            C1 = 2 * r2
+            D_alpha = abs(C1 * alpha[j] - wolves[i][j])
+            X1 = alpha[j] - A1 * D_alpha
+
+            r1, r2 = np.random.rand(), np.random.rand()
+            A2 = 2 * a * r1 - a
+            C2 = 2 * r2
+            D_beta = abs(C2 * beta[j] - wolves[i][j])
+            X2 = beta[j] - A2 * D_beta
+
+            r1, r2 = np.random.rand(), np.random.rand()
+            A3 = 2 * a * r1 - a
+            C3 = 2 * r2
+            D_delta = abs(C3 * delta[j] - wolves[i][j])
+            X3 = delta[j] - A3 * D_delta
+
+            wolves[i][j] = (X1 + X2 + X3) / 3
+
+    # Update binary positions
+    binary_wolves = np.array([binary_transform(w) for w in wolves])
+    fitness_vals = np.array([fitness(w) for w in binary_wolves])
+
+    # Update alpha, beta, delta
+    sorted_idx = np.argsort(fitness_vals)[::-1]
+    alpha, alpha_score = wolves[sorted_idx[0]].copy(), fitness_vals[sorted_idx[0]]
+    beta, beta_score = wolves[sorted_idx[1]].copy(), fitness_vals[sorted_idx[1]]
+    delta, delta_score = wolves[sorted_idx[2]].copy(), fitness_vals[sorted_idx[2]]
+
+    print(f"Iteration {t+1}/{max_iter}, Best fitness: {alpha_score:.4f}")
+
+# Best feature subset
+best_features = np.where(binary_transform(alpha) == 1)[0]
+print("Selected feature indices:", best_features)
+print("Number of features selected:", len(best_features))
+
